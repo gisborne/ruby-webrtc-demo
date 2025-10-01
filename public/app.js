@@ -29,6 +29,14 @@ let remoteSet = false;
 const pendingCandidates = [];
 let transport = forceWs ? "ws" : "webrtc"; // current transport
 let connectTimer = null;
+const transportEl = document.getElementById("transport");
+function updateTransport() {
+  if (!transportEl) return;
+  transportEl.textContent = transport;
+  transportEl.style.background = transport === "webrtc" ? "#e8ffe8" : "#ffe8e8";
+  transportEl.style.color = transport === "webrtc" ? "#174" : "#711";
+}
+updateTransport();
 
 const log = document.getElementById("log");
 const statusEl = document.getElementById("status");
@@ -60,6 +68,7 @@ function useWsFallback(reason = "") {
   if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
   setStatus("fallback to websocket" + (reason ? ` (${reason})` : ""));
   enableSend(true);
+  updateTransport();
 }
 
 function armConnectTimeout(ms = 8000) {
@@ -94,6 +103,7 @@ function wireChannel() {
     setStatus("connected");
     enableSend(true);
     if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+    updateTransport();
   };
   dc.onmessage = (event) => append("peer", "Peer: " + event.data);
   dc.onclose = () => {
@@ -108,6 +118,7 @@ pc.oniceconnectionstatechange = () => {
   console.log("iceConnectionState=", pc.iceConnectionState);
   if (pc.iceConnectionState === "failed") useWsFallback("ice failed");
   if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") setStatus("connected");
+  updateTransport();
 };
 
 ws.onopen = () => {
@@ -116,6 +127,7 @@ ws.onopen = () => {
   if (forceWs) {
     setStatus("websocket mode");
     enableSend(true);
+    updateTransport();
   }
 };
 

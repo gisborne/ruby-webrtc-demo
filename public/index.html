@@ -9,6 +9,7 @@
     #log { border: 1px solid #ccc; padding: 0.75rem; height: 280px; overflow: auto; border-radius: 8px; }
     #roomLine { margin-bottom: 0.5rem; }
     #status { font-size: 0.9em; color: #555; }
+    #transport { display: inline-block; margin-left: 0.5rem; padding: 0 0.4rem; border-radius: 6px; font-size: 0.8em; line-height: 1.6; background: #eef; color: #225; }
     form { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
     input[type=text] { flex: 1; padding: 0.5rem; }
     button { padding: 0.5rem 0.9rem; }
@@ -19,6 +20,7 @@
 <div id="roomLine">
   Room: <strong id="roomName"></strong>
   <div id="status">status: <em>connecting…</em></div>
+  <div>transport: <span id="transport">detecting…</span></div>
 </div>
 <div id="log" aria-live="polite"></div>
 <form id="chatForm">
