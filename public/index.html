@@ -1,0 +1,172 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WebRTC DataChannel Chat (Ruby signaling)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ccc; padding: 0.75rem; height: 280px; overflow: auto; border-radius: 8px; }
+    #roomLine { margin-bottom: 0.5rem; }
+    #status { font-size: 0.9em; color: #555; }
+    form { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    input[type=text] { flex: 1; padding: 0.5rem; }
+    button { padding: 0.5rem 0.9rem; }
+    .me { color: #0a0; }
+    .peer { color: #06c; }
+  </style>
+</head>
+<body>
+<h1>WebRTC DataChannel Chat</h1>
+<div id="roomLine">
+  Room: <strong id="roomName"></strong>
+  <div id="status">status: <em>connecting…</em></div>
+</div>
+<div id="log" aria-live="polite"></div>
+<form id="chatForm">
+  <input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
+  <button type="submit" id="sendBtn" disabled>Send</button>
+</form>
+
+<script>
+  // --- Simple room selection via URL hash or prompt ---
+  const room = (location.hash && location.hash.slice(1)) || prompt("Room name?", "demo") || "demo";
+  document.getElementById("roomName").textContent = room;
+  if (!location.hash) location.hash = "#" + room;
+
+  // --- WebSocket for signaling ---
+  const wsProtocol = (location.protocol === "https:") ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProtocol}//${location.host}/ws`);
+
+  // --- WebRTC setup ---
+  const params = new URLSearchParams(location.search);
+  const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+  const turnUrl = params.get("turn");
+  const turnUser = params.get("turnUser");
+  const turnPass = params.get("turnPass");
+  if (turnUrl && turnUser && turnPass) {
+    iceServers.push({ urls: turnUrl, username: turnUser, credential: turnPass });
+  }
+  const pc = new RTCPeerConnection({ iceServers });
+
+  let dc;           // RTCDataChannel
+  let isCaller = false;
+
+  const log = document.getElementById("log");
+  const statusEl = document.getElementById("status");
+  const sendBtn = document.getElementById("sendBtn");
+  const msgInput = document.getElementById("msg");
+
+  function append(kind, text) {
+    const p = document.createElement("div");
+    p.className = kind;
+    p.textContent = text;
+    log.appendChild(p);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function setStatus(text) {
+    statusEl.innerHTML = "status: <em>" + text + "</em>";
+  }
+
+  function enableSend(enabled) {
+    sendBtn.disabled = !enabled;
+    msgInput.disabled = !enabled;
+  }
+
+  // ICE -> signal to peer
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({
+        room,
+        type: "candidate",
+        candidate: event.candidate
+      }));
+    }
+  };
+
+  // Answerer will receive the data channel created by caller
+  pc.ondatachannel = (event) => {
+    dc = event.channel;
+    wireChannel();
+  };
+
+  function wireChannel() {
+    dc.onopen = () => {
+      setStatus("connected");
+      enableSend(true);
+    };
+    dc.onmessage = (event) => append("peer", "Peer: " + event.data);
+    dc.onclose = () => {
+      setStatus("disconnected");
+      enableSend(false);
+    };
+  }
+
+  ws.onopen = () => {
+    // Join the signaling room
+    ws.send(JSON.stringify({ cmd: "join", room }));
+  };
+
+  ws.onmessage = async (evt) => {
+    const msg = JSON.parse(evt.data);
+
+    if (msg.type === "peers") {
+      // Never create offer on initial peers info; wait for someone to join
+      if (msg.count > 1) {
+        setStatus("peer present (waiting for new_peer to initiate)");
+      } else {
+        setStatus("waiting for peer");
+      }
+    }
+
+    if (msg.type === "new_peer") {
+      if (!isCaller) {
+        isCaller = true;
+        dc = pc.createDataChannel("chat");
+        wireChannel();
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({ room, type: "offer", sdp: offer }));
+        setStatus("sent offer (waiting for answer)");
+      }
+    }
+
+    if (msg.type === "offer") {
+      await pc.setRemoteDescription(msg.sdp);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ room, type: "answer", sdp: answer }));
+      setStatus("sent answer");
+    }
+
+    if (msg.type === "answer") {
+      await pc.setRemoteDescription(msg.sdp);
+      setStatus("got answer (establishing)");
+    }
+
+    if (msg.type === "candidate") {
+      try {
+        await pc.addIceCandidate(msg.candidate);
+      } catch (e) {
+        console.error("Error adding ICE candidate", e);
+      }
+    }
+  };
+
+  // Chat UI
+  document.getElementById("chatForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = msgInput.value.trim();
+    if (!text || !dc || dc.readyState !== "open") return;
+    dc.send(text);
+    append("me", "Me: " + text);
+    msgInput.value = "";
+  });
+
+  // Nice-to-have: let Enter focus the input immediately
+  msgInput.focus();
+</script>
+</body>
+</html>
