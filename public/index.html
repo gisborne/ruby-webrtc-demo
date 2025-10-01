@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>WebRTC DataChannel Chat (Ruby signaling)</title>
@@ -12,8 +12,6 @@
     form { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
     input[type=text] { flex: 1; padding: 0.5rem; }
     button { padding: 0.5rem 0.9rem; }
-    .me { color: #0a0; }
-    .peer { color: #06c; }
   </style>
 </head>
 <body>
@@ -24,7 +22,7 @@
 </div>
 <div id="log" aria-live="polite"></div>
 <form id="chatForm">
-  <input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
+  <label for="msg">Type a message…</label><input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
   <button type="submit" id="sendBtn" disabled>Send</button>
 </form>
 
