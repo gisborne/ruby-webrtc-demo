@@ -230,16 +230,8 @@ begin
       end
     end
 
-    # JS-side wiring
-    JS.eval(
-      "try{\n" +
-      "  var p=window.__ruby_pc;\n" +
-      "  if(p){ p.onicecandidate = function(ev){ if(ev && ev.candidate){ RubyOnIceCandidate(ev.candidate); } }; }\n" +
-      "  if(p){ p.ondatachannel = function(ev){ window.__ruby_dc = ev.channel; var ch=window.__ruby_dc; if(ch){ ch.onopen=function(){ try{ RubyOnDCOpen(); }catch(e){} }; ch.onmessage=function(e2){ try{ var v=(typeof renderMsg==='function')? renderMsg(e2) : (function(){var raw=(e2 && typeof e2==='object' && 'data' in e2)? e2.data : e2; if(typeof raw==='undefined' || raw===null) raw=''; return (typeof raw==='string')? raw : String(raw);})(); console.log('[dc] recv', {rawEvent: e2, rendered: v}); var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className='peer'; d.textContent='Peer: ' + (v==null? '': String(v)); log.appendChild(d); log.scrollTop=log.scrollHeight; }catch(e){ console.warn('[dc] onmessage error', e); } }; ch.onclose=function(){ try{ RubyOnDCClose(); }catch(e){} }; } }; }\n" +
-      "  if(p){ p.oniceconnectionstatechange = function(){ RubyOnIceState(p.iceConnectionState); }; }\n" +
-      "}\n" +
-      "catch(e){}"
-    )
+    # Delegate actual PC/DC wiring to the single JS implementation
+    JS.eval("try{ wirePc(); }catch(e){}")
   end
 
   # WebSocket signaling
@@ -318,15 +310,14 @@ begin
     "      return (v==null) ? '' : String(v);\n" +
     "    }catch(_){ return ''; }\n" +
     "  }\n" +
-    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ console.log('[webrtc] dc open'); setStatus('connected'); enableSend(true); }; ch.onmessage=function(e){ try{ var v=renderMsg(e); console.log('[dc] recv/wire', {rawEvent: e, rendered: v}); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ console.log('[webrtc] dc close'); setStatus('disconnected'); enableSend(false); }; }\n" +
+    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ setStatus('connected'); enableSend(true); }; ch.onmessage=function(e2){ try{ var v=renderMsg(e2); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ setStatus('disconnected'); enableSend(false); }; }\n" +
     "  function wirePc(){ var p=window.__ruby_pc; if(!p) return; p.onicecandidate = function(ev){ try{ if(ev && ev.candidate){ RubyOnIceCandidate(ev.candidate); } }catch(e){} }; p.ondatachannel=function(ev){ try{ window.__ruby_dc = ev.channel; wireChannel(); }catch(e){} }; p.oniceconnectionstatechange=function(){ try{ RubyOnIceState(p.iceConnectionState); }catch(e){} }; }\n" +
     "  window.__ruby_remote_set = false;\n" +
     "  window.__ruby_pending = [];\n" +
     "  window.__ruby_ws_handler = async function(evt){\n" +
-    "    var msg={}; try{ msg=JSON.parse(evt.data); }catch(e){}; console.log('[ws] recv', msg && msg.type || '(unknown)', msg);\n" +
+    "    var msg={}; try{ msg=JSON.parse(evt.data); }catch(e){};\n" +
     "    var p = window.__ruby_pc;\n" +
     "    if(msg.type==='chat'){\n" +
-    "      console.log('[ws] chat payload', msg);\n" +
     "      try{\n" +
     "        var v = (msg && ('text' in msg)) ? msg.text : '';\n" +
     "        if (typeof v === 'undefined' || v === null) v = '';\n" +
@@ -350,7 +341,7 @@ begin
   JS.eval(
     "(function(){\n" +
     "  window.__ruby_send_obj = function(o){ try{ if(window.__ruby_ws){ window.__ruby_ws.send(JSON.stringify(o)); } }catch(e){} };\n" +
-    "  window.__ruby_send_offer = function(off, room){console.log('[ws] sending offer'); try{ if(window.__ruby_ws){ var payload = { room: room, type: 'offer', sdp: off }; window.__ruby_ws.send(JSON.stringify(payload)); } }catch(e){} };\n" +
+    "  window.__ruby_send_offer = function(off, room){ try{ if(window.__ruby_ws){ var payload = { room: room, type: 'offer', sdp: off }; window.__ruby_ws.send(JSON.stringify(payload)); } }catch(e){} };\n" +
     "  window.__ruby_send_answer = function(ans, room){ try{ if(window.__ruby_ws){ var payload = { room: room, type: 'answer', sdp: ans }; window.__ruby_ws.send(JSON.stringify(payload)); } }catch(e){} };\n" +
     "  window.__ruby_send_candidate = function(cand, room){ try{ if(window.__ruby_ws){ window.__ruby_ws.send(JSON.stringify({ room: room, type: 'candidate', candidate: cand })); } }catch(e){} };\n" +
     "  window.__ruby_send_chat = function(room, text){ try{ if(window.__ruby_ws){ window.__ruby_ws.send(JSON.stringify({ room: room, type: 'chat', text: text })); } }catch(e){} };\n" +
@@ -411,11 +402,10 @@ begin
       "  var v = m ? m.value : '';\n" +
       "  if (typeof v === 'undefined' || v === null) v = '';\n" +
       "  v = String(v).trim();\n" +
-      "  console.log('[chat] submit value=', {raw: (m? m.value: undefined), coerced: v});\n" +
       "  if (!v) return;\n" +
       "  var ch = window.__ruby_dc;\n" +
-      "  if (ch && ch.readyState === 'open') { try { console.log('[chat] sending via DC', v); ch.send(v); } catch(e) { console.warn('[chat] dc.send error', e); } }\n" +
-      "  else { try { console.log('[chat] sending via WS', v); window.__ruby_send_chat(" + room.to_json + ", v); } catch(e) { console.warn('[chat] ws send error', e); } }\n" +
+      "  if (ch && ch.readyState === 'open') { try { ch.send(v); } catch(e) {} }\n" +
+      "  else { try { window.__ruby_send_chat(" + room.to_json + ", v); } catch(e) {} }\n" +
       "  try { var log=document.getElementById('log'); if(log){ var d=document.createElement('div'); d.className='me'; d.textContent='Me: ' + v; log.appendChild(d); log.scrollTop=log.scrollHeight; } } catch(_) {}\n" +
       "  try { if (m) m.value = ''; } catch(_) {}\n" +
       "})();"
