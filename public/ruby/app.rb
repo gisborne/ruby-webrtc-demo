@@ -29,19 +29,13 @@ begin
   end
 
   def set_status(text)
-    html = "status: <em>Ruby: #{text}</em>"
-    JS.eval("var e=document.getElementById('status'); if(e){ e.innerHTML = #{html.to_json} }")
+    # Delegate to namespaced UI helper for consistency
+    JS.eval("try{ if(window.RubyRTC && window.RubyRTC.ui && typeof RubyRTC.ui.setStatus==='function'){ RubyRTC.ui.setStatus(" + "Ruby: #{text}".to_json + "); } else { var e=document.getElementById('status'); if(e){ e.innerHTML = " + "status: <em>Ruby: #{text}</em>".to_json + "; } } }catch(e){}")
   end
 
   def append(kind, text)
-    # Use pure JS to avoid Ruby->JS property writes on host objects
-    JS.eval(
-      "(function(){\n" +
-      "  try{ var log=document.getElementById('log'); if(!log) return;\n" +
-      "    var d=document.createElement('div'); d.className=" + kind.to_json + "; d.textContent=" + text.to_json + ";\n" +
-      "    log.appendChild(d); log.scrollTop=log.scrollHeight; }catch(e){}\n" +
-      "})();"
-    )
+    # Delegate to namespaced UI helper for consistency
+    JS.eval("try{ if(window.RubyRTC && RubyRTC.ui && typeof RubyRTC.ui.append==='function'){ RubyRTC.ui.append(" + kind.to_json + ", " + text.to_json + "); } else { var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className=" + kind.to_json + "; d.textContent=" + text.to_json + "; log.appendChild(d); log.scrollTop=log.scrollHeight; } }catch(e){}")
   end
 
   # Room selection (defensive: avoid prompt() to prevent JS bridge errors)
@@ -293,6 +287,7 @@ begin
     "(function(){\n" +
     "  function setStatus(t){ var el=document.getElementById('status'); if(el) el.innerHTML='status: <em>'+t+'</em>'; }\n" +
     "  function appendPeer(t){ var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className='peer'; d.textContent=t; log.appendChild(d); log.scrollTop=log.scrollHeight; }\n" +
+    "  function appendLine(kind, text){ var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className=String(kind||''); d.textContent=String(text==null?'':text); log.appendChild(d); log.scrollTop=log.scrollHeight; }\n" +
     "  function enableSend(b){ var s=document.getElementById('sendBtn'); var m=document.getElementById('msg'); if(s) s.disabled=!b; if(m) m.disabled=!b; }\n" +
     "  function renderMsg(e){\n" +
     "    try{\n" +
@@ -310,8 +305,19 @@ begin
     "      return (v==null) ? '' : String(v);\n" +
     "    }catch(_){ return ''; }\n" +
     "  }\n" +
-    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ setStatus('connected'); enableSend(true); }; ch.onmessage=function(e2){ try{ var v=renderMsg(e2); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ setStatus('disconnected'); enableSend(false); }; }\n" +
+    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ setStatus('connected'); enableSend(true); }; ch.onmessage=function(e){ try{ var v=renderMsg(e); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ setStatus('disconnected'); enableSend(false); }; }\n" +
     "  function wirePc(){ var p=window.__ruby_pc; if(!p) return; p.onicecandidate = function(ev){ try{ if(ev && ev.candidate){ RubyOnIceCandidate(ev.candidate); } }catch(e){} }; p.ondatachannel=function(ev){ try{ window.__ruby_dc = ev.channel; wireChannel(); }catch(e){} }; p.oniceconnectionstatechange=function(){ try{ RubyOnIceState(p.iceConnectionState); }catch(e){} }; }\n" +
+    "  // Export helpers for external callers (namespaced)\n" +
+    "  if(!window.RubyRTC) window.RubyRTC = {};\n" +
+    "  window.RubyRTC.ui = window.RubyRTC.ui || {};\n" +
+    "  window.RubyRTC.util = window.RubyRTC.util || {};\n" +
+    "  window.RubyRTC.wirePc = wirePc;\n" +
+    "  window.RubyRTC.wireChannel = wireChannel;\n" +
+    "  window.RubyRTC.ui.setStatus = setStatus;\n" +
+    "  window.RubyRTC.ui.appendPeer = appendPeer;\n" +
+    "  window.RubyRTC.ui.append = appendLine;\n" +
+    "  window.RubyRTC.ui.enableSend = enableSend;\n" +
+    "  window.RubyRTC.util.renderMsg = renderMsg;\n" +
     "  window.__ruby_remote_set = false;\n" +
     "  window.__ruby_pending = [];\n" +
     "  window.__ruby_ws_handler = async function(evt){\n" +
