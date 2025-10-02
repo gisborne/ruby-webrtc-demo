@@ -1,3 +1,34 @@
+/*
+public/app.js
+WebRTC chat client (JavaScript) for the demo.
+What this file does:
+- Parses room from URL hash and connects to the signaling WebSocket at /ws
+- Creates an RTCPeerConnection (STUN by default; optional TURN via ?turn, ?turnUser, ?turnPass)
+- Negotiates a DataChannel (offer/answer + ICE candidates) and exchanges chat messages
+- Falls back to plain WebSocket chat if WebRTC fails or times out
+
+Quick start:
+- Open two tabs with the same #room (e.g. /index.html#demo)
+- Optional TURN-only: add &forceRelay=1&turn=turn:host:3478&turnUser=USER&turnPass=PASS
+- The transport badge shows whether DataChannel (webrtc) or WebSocket (ws) is active
+
+Note:
+- This file mirrors the Ruby WASM client at public/ruby/app.rb conceptually.
+- For clarity, DOM updates are small helpers; signaling branches are handled in ws.onmessage.
+
+Reading guide (where to look):
+- Transport badge and fallback: setStatus(), enableSend(), updateTransport(), useWsFallback()
+  - We switch to WS on ICE failure or a connect timeout.
+- Message coercion: renderMsg(e) handles string/Blob/ArrayBuffer and is used by dc.onmessage
+- Signaling handling (ws.onmessage):
+  - 'new_peer'  -> caller creates DataChannel and sends offer
+  - 'offer'     -> callee sets remote, creates/sends answer
+  - 'answer'    -> caller sets remote and completes handshake
+  - 'candidate' -> both sides add ICE candidates as they arrive
+  - 'chat'      -> append peer message to the log
+  - 'room_full' -> (optional) show a friendly message if enforced by server
+*/
+
 // --- Simple room selection via URL hash or prompt ---
 const room = (location.hash && location.hash.slice(1)) || prompt("Room name?", "demo") || "demo";
 document.getElementById("roomName").textContent = room;
