@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebRTC DataChannel Chat (Ruby signaling)</title>
+  <!--
+    index.html
+    Demo page for a simple WebRTC chat with a tiny signaling server.
+    How it works:
+    - Choose implementation via ?impl=ruby to run the Ruby WASM client (default is JS).
+    - The loader (at bottom) fetches ruby/app.rb + runtime, or falls back to app.js.
+    - The UI shows current room, connection status, and transport (webrtc vs ws).
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ccc; padding: 0.75rem; height: 280px; overflow: auto; border-radius: 8px; }
+    #roomLine { margin-bottom: 0.5rem; }
+    #status { font-size: 0.9em; color: #555; }
+    #transport { display: inline-block; margin-left: 0.5rem; padding: 0 0.4rem; border-radius: 6px; font-size: 0.8em; line-height: 1.6; background: #eef; color: #225; }
+    form { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    input[type=text] { flex: 1; padding: 0.5rem; }
+    button { padding: 0.5rem 0.9rem; }
+  </style>
+</head>
+<body>
+<h1>WebRTC DataChannel Chat</h1>
+<!-- Room/status header: shows room, connection status, and current transport -->
+<div id="roomLine">
+  Room: <strong id="roomName"></strong>
+  <div id="status" aria-live="polite">status: <em>connecting…</em></div>
+  <div>transport: <span id="transport" aria-live="polite">detecting…</span></div>
+</div>
+<div id="log" aria-live="polite"></div>
+<!-- Chat form: disabled until connected (DataChannel or WS fallback) -->
+<form id="chatForm">
+  <label for="msg">Type a message…</label><input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
+  <button type="submit" id="sendBtn" disabled>Send</button>
+</form>
+<!-- Loader below injects the Ruby client when ?impl=ruby, otherwise loads app.js -->
+
+<script>
+  (function () {
+    // Select client implementation from URL (?impl=ruby for Ruby WASM; default is JS)
+    const impl = new URLSearchParams(location.search).get("impl") || "js";
+    if (impl === "ruby") {
+      // Guard to prevent double-injection on re-entrant loads
+      if (!window.__ruby_app_injected) {
+        window.__ruby_app_injected = true;
+        // 1) Fetch app.rb (Ruby source)
+        fetch("ruby/app.rb", { cache: "no-cache" })
+          .then(r => r.text())
+          .then(src => {
+            // 2) Inject as inline Ruby script so the runtime can execute it
+            const rubyScript = document.createElement("script");
+            rubyScript.type = "text/ruby";
+            rubyScript.text = src;
+            document.body.appendChild(rubyScript);
+
+            // 3) Load the Ruby IIFE runtime after the Ruby script is present
+            const runtime = document.createElement("script");
+            runtime.src = "ruby/browser.script.iife.js";
+            runtime.onerror = (e) => console.error("Failed to load Ruby IIFE runtime", e);
+            document.body.appendChild(runtime);
+          })
+          .catch(e => console.error("Failed to fetch ruby/app.rb", e));
+      }
+      return;
+    }
+
+    // JS client (default): load the JavaScript implementation
+    const js = document.createElement("script");
+    js.src = "app.js";
+    document.body.appendChild(js);
+  })();
+</script>
+
+</body>
+</html>
