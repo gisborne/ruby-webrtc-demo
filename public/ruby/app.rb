@@ -287,8 +287,15 @@ begin
     "(function(){\n" +
     "  function setStatus(t){ var el=document.getElementById('status'); if(el) el.innerHTML='status: <em>'+t+'</em>'; }\n" +
     "  function appendPeer(t){ var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className='peer'; d.textContent=t; log.appendChild(d); log.scrollTop=log.scrollHeight; }\n" +
-    "  function appendLine(kind, text){ var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className=String(kind||''); d.textContent=String(text==null?'':text); log.appendChild(d); log.scrollTop=log.scrollHeight; }\n" +
     "  function enableSend(b){ var s=document.getElementById('sendBtn'); var m=document.getElementById('msg'); if(s) s.disabled=!b; if(m) m.disabled=!b; }\n" +
+    "  // Transport + fallback helpers\n" +
+    "  function setTransportLabel(t){ var el=document.getElementById('transport'); if(!el) return; el.textContent=t; el.style.background = (t==='webrtc')? '#e8ffe8':'#ffe8e8'; el.style.color = (t==='webrtc')? '#174':'#711'; }\n" +
+    "  var __ruby_transport = 'webrtc';\n" +
+    "  var __ruby_connect_timer = null;\n" +
+    "  function updateTransport(){ setTransportLabel(__ruby_transport); }\n" +
+    "  function clearConnectTimer(){ try{ if(__ruby_connect_timer){ clearTimeout(__ruby_connect_timer); __ruby_connect_timer=null; } }catch(_){} }\n" +
+    "  function armConnectTimeout(ms){ clearConnectTimer(); __ruby_connect_timer = setTimeout(function(){ useWsFallback('timeout'); }, (ms||8000)); }\n" +
+    "  function useWsFallback(reason){ if(__ruby_transport==='ws') return; __ruby_transport='ws'; try{ if(window.__ruby_dc){ window.__ruby_dc.close(); } }catch(_){} try{ if(window.__ruby_pc){ window.__ruby_pc.close(); } }catch(_){} setStatus('fallback to websocket' + (reason? ' ('+reason+')':'')); enableSend(true); updateTransport(); }\n" +
     "  function renderMsg(e){\n" +
     "    try{\n" +
     "      var v = (e && typeof e === 'object' && 'data' in e) ? e.data : e;\n" +
@@ -305,8 +312,8 @@ begin
     "      return (v==null) ? '' : String(v);\n" +
     "    }catch(_){ return ''; }\n" +
     "  }\n" +
-    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ setStatus('connected'); enableSend(true); }; ch.onmessage=function(e){ try{ var v=renderMsg(e); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ setStatus('disconnected'); enableSend(false); }; }\n" +
-    "  function wirePc(){ var p=window.__ruby_pc; if(!p) return; p.onicecandidate = function(ev){ try{ if(ev && ev.candidate){ RubyOnIceCandidate(ev.candidate); } }catch(e){} }; p.ondatachannel=function(ev){ try{ window.__ruby_dc = ev.channel; wireChannel(); }catch(e){} }; p.oniceconnectionstatechange=function(){ try{ RubyOnIceState(p.iceConnectionState); }catch(e){} }; }\n" +
+    "  function wireChannel(){ var ch=window.__ruby_dc; if(!ch) return; ch.onopen=function(){ __ruby_transport='webrtc'; updateTransport(); setStatus('connected'); enableSend(true); clearConnectTimer(); }; ch.onmessage=function(e){ try{ var v=renderMsg(e); if(v!=null){ appendPeer('Peer: '+v); } }catch(_){ appendPeer('Peer: '); } }; ch.onclose=function(){ if(__ruby_transport==='webrtc'){ setStatus('disconnected'); enableSend(false); } }; }\n" +
+    "  function wirePc(){ var p=window.__ruby_pc; if(!p) return; p.onicecandidate = function(ev){ try{ if(ev && ev.candidate){ RubyOnIceCandidate(ev.candidate); } }catch(e){} }; p.ondatachannel=function(ev){ try{ window.__ruby_dc = ev.channel; wireChannel(); }catch(e){} }; p.oniceconnectionstatechange=function(){ try{ var s=p.iceConnectionState; if(s==='failed'){ useWsFallback('ice failed'); } if(s==='connected'||s==='completed'){ setStatus('connected'); } }catch(e){} }; updateTransport(); }\n" +
     "  // Export helpers for external callers (namespaced)\n" +
     "  if(!window.RubyRTC) window.RubyRTC = {};\n" +
     "  window.RubyRTC.ui = window.RubyRTC.ui || {};\n" +
@@ -315,31 +322,26 @@ begin
     "  window.RubyRTC.wireChannel = wireChannel;\n" +
     "  window.RubyRTC.ui.setStatus = setStatus;\n" +
     "  window.RubyRTC.ui.appendPeer = appendPeer;\n" +
-    "  window.RubyRTC.ui.append = appendLine;\n" +
+    "  window.RubyRTC.ui.append = function(kind, text){ var log=document.getElementById('log'); if(!log) return; var d=document.createElement('div'); d.className=String(kind||''); d.textContent=String(text==null?'':text); log.appendChild(d); log.scrollTop=log.scrollHeight; };\n" +
     "  window.RubyRTC.ui.enableSend = enableSend;\n" +
     "  window.RubyRTC.util.renderMsg = renderMsg;\n" +
+    "  // Expose fallback helpers (optional debugging)\n" +
+    "  window.__ruby_use_ws_fallback = useWsFallback;\n" +
+    "  window.__ruby_arm_connect_timeout = armConnectTimeout;\n" +
     "  window.__ruby_remote_set = false;\n" +
     "  window.__ruby_pending = [];\n" +
     "  window.__ruby_ws_handler = async function(evt){\n" +
     "    var msg={}; try{ msg=JSON.parse(evt.data); }catch(e){};\n" +
     "    var p = window.__ruby_pc;\n" +
-    "    if(msg.type==='chat'){\n" +
-    "      try{\n" +
-    "        var v = (msg && ('text' in msg)) ? msg.text : '';\n" +
-    "        if (typeof v === 'undefined' || v === null) v = '';\n" +
-    "        var text = (typeof v === 'string') ? v : String(v);\n" +
-    "        appendPeer('Peer: ' + text);\n" +
-    "      }catch(_){ appendPeer('Peer: '); }\n" +
-    "      return;\n" +
-    "    }\n" +
+    "    if(msg.type==='chat'){ try{ var v = (msg && ('text' in msg)) ? msg.text : ''; if (typeof v === 'undefined' || v === null) v = ''; var text = (typeof v === 'string') ? v : String(v); appendPeer('Peer: ' + text); }catch(_){ appendPeer('Peer: '); } return; }\n" +
     "    if(msg.type==='peers'){ if((msg.count||0)>1){ setStatus('peer present (waiting for new_peer to initiate)'); } else { setStatus('waiting for peer'); } return; }\n" +
-    "    if(msg.type==='new_peer'){ if(!window.__ruby_offer_started){ try{ window.__ruby_offer_started=true; if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } window.__ruby_dc=p.createDataChannel('chat'); wireChannel(); console.log('[webrtc] creating offer (new_peer)'); var off=await p.createOffer(); await p.setLocalDescription(off); console.log('[ws] sending offer'); window.__ruby_send_offer(off, " + room.to_json + "); }catch(e){ console.error('[webrtc] offer error', e); } } return; }\n" +
-    "    if(msg.type==='offer'){ try{ if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } console.log('[webrtc] setRemoteDescription offer'); await p.setRemoteDescription(typeof msg.sdp==='string'? {type:'offer', sdp:msg.sdp}: msg.sdp); window.__ruby_remote_set=true; while(window.__ruby_pending.length){ try{ await p.addIceCandidate(window.__ruby_pending.shift()); }catch(e){ console.error('drain cand', e); } } var ans=await p.createAnswer(); await p.setLocalDescription(ans); console.log('[ws] sending answer'); window.__ruby_send_answer(ans, " + room.to_json + "); setStatus('sent answer'); }catch(e){ console.error('[webrtc] answer error', e); } return; }\n" +
-    "    if(msg.type==='answer'){ try{ if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } console.log('[webrtc] setRemoteDescription answer'); await p.setRemoteDescription(typeof msg.sdp==='string'? {type:'answer', sdp:msg.sdp}: msg.sdp); window.__ruby_remote_set=true; while(window.__ruby_pending.length){ try{ await p.addIceCandidate(window.__ruby_pending.shift()); }catch(e){ console.error('drain cand', e); } } setStatus('got answer (establishing)'); }catch(e){ console.error('[webrtc] setRemote ans error', e); } return; }\n" +
-    "    if(msg.type==='candidate'){ try{ if(!msg.candidate || !msg.candidate.candidate){ console.log('[webrtc] ignore bad candidate', msg && msg.candidate); return; } if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } console.log('[webrtc] addIce', msg.candidate && msg.candidate.candidate); if(!window.__ruby_remote_set){ window.__ruby_pending.push(msg.candidate); } else { await p.addIceCandidate(msg.candidate); } }catch(e){ console.error('[webrtc] addIce error', e); } return; }\n" +
+    "    if(msg.type==='new_peer'){ if(!window.__ruby_offer_started){ try{ window.__ruby_offer_started=true; if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } window.__ruby_dc=p.createDataChannel('chat'); wireChannel(); var off=await p.createOffer(); await p.setLocalDescription(off); window.__ruby_send_offer(off, " + room.to_json + "); armConnectTimeout(8000); }catch(e){ console.error('[webrtc] offer error', e); } } return; }\n" +
+    "    if(msg.type==='offer'){ try{ if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } await p.setRemoteDescription(typeof msg.sdp==='string'? {type:'offer', sdp:msg.sdp}: msg.sdp); window.__ruby_remote_set=true; while(window.__ruby_pending.length){ try{ await p.addIceCandidate(window.__ruby_pending.shift()); }catch(e){ console.error('drain cand', e); } } var ans=await p.createAnswer(); await p.setLocalDescription(ans); window.__ruby_send_answer(ans, " + room.to_json + "); setStatus('sent answer'); armConnectTimeout(8000); }catch(e){ console.error('[webrtc] answer error', e); } return; }\n" +
+    "    if(msg.type==='answer'){ try{ if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } await p.setRemoteDescription(typeof msg.sdp==='string'? {type:'answer', sdp:msg.sdp}: msg.sdp); window.__ruby_remote_set=true; while(window.__ruby_pending.length){ try{ await p.addIceCandidate(window.__ruby_pending.shift()); }catch(e){ console.error('drain cand', e); } } setStatus('got answer (establishing)'); }catch(e){ console.error('[webrtc] setRemote ans error', e); } return; }\n" +
+    "    if(msg.type==='candidate'){ try{ if(!msg.candidate || !msg.candidate.candidate){ return; } if(!p){ console.warn('[webrtc] no pc (creating)'); try{ window.__ruby_pc = p = window.__ruby_build_pc(); if(!p){ console.error('[webrtc] build pc returned null'); return; } wirePc(); }catch(e){ console.error('[webrtc] create pc on-demand failed', e); return; } } if(!window.__ruby_remote_set){ window.__ruby_pending.push(msg.candidate); } else { await p.addIceCandidate(msg.candidate); } }catch(e){ console.error('[webrtc] addIce error', e); } return; }\n" +
     "  };\n" +
     "  // If WS already open when handler is defined, bind now\n" +
-    "  try{ var w=window.__ruby_ws; if(w && w.readyState===1 && window.__ruby_ws_handler){ w.onmessage = window.__ruby_ws_handler; console.log('[ws] onmessage bound (post-define)'); } }catch(e){}\n" +
+    "  try{ var w=window.__ruby_ws; if(w && w.readyState===1 && window.__ruby_ws_handler){ w.onmessage = window.__ruby_ws_handler; } }catch(e){}\n" +
     "})();"
   )
 
