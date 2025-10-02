@@ -59,6 +59,19 @@ class WsApp
           # snapshot of peers before adding the new one
           peers_before = room_peers.dup
 
+          # Enforce 1:1 rooms: reject third (or more) peers
+          if peers_before.length >= 2
+            begin
+              ws.send({ type: "room_full", max: 2 }.to_json)
+            rescue
+            end
+            begin
+              ws.close(1000, "room full")
+            rescue
+            end
+            next
+          end
+
           # send current peer count to the joining client (it will wait if >1)
           ws.send({ type: "peers", count: peers_before.length + 1 }.to_json)
           # notify existing peers that a new peer has arrived (they become caller)
