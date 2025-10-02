@@ -74,8 +74,6 @@ begin
   # We keep a few helpers to update status and append chat lines.
   # The transport badge is updated by the JS fallback helpers.
   checkpoint "ui-ok"
-  send_btn = dom_by_id("sendBtn")
-  msg_input = dom_by_id("msg")
   JS.eval("var t=document.getElementById('transport'); if(t){ t.textContent='ruby+webrtc'; t.style.background='#e8ffe8'; t.style.color='#174'; }")
 
   set_status("initializing…")
@@ -112,7 +110,7 @@ begin
   end
   checkpoint "built-config"
   # Stash config for later on-demand PC creation from JS.
-  JS.eval("try{ window.__ruby_pc_cfg = " + js_pc_cfg + "; }catch(e){}");
+  JS.eval("try{ window.__ruby_pc_cfg = " + js_pc_cfg + "; }catch(e){}")
   # Provide a safe builder that filters invalid iceServers and always falls back to STUN.
   JS.eval(<<~JS
   (function(){
@@ -319,10 +317,6 @@ JS
   checkpoint "after-pc"
   puts "[ruby] RTCPeerConnection created"
 
-  dc = nil
-  is_caller = false
-  remote_set = false
-  pending_candidates = []
   local_pending_candidates = []
   ws_ready = false
 
@@ -470,7 +464,7 @@ JS
   # Wire WS events via JS property assignment, invoking Ruby procs.
   JS.global[:RubyOnWsOpen] = proc do
     set_status("signaling open")
-    ws_ready = true
+
     # Send join with primitives via JS-side stringify
     JS.eval("if(window.RubyRTC&&window.RubyRTC.send){ window.RubyRTC.send.obj(" + { cmd: "join", room: room }.to_json + ") } else if(window.__ruby_send_obj){ window.__ruby_send_obj(" + { cmd: "join", room: room }.to_json + ") }")
     # flush any local candidates
@@ -481,7 +475,7 @@ JS
         cand = local_pending_candidates.shift
       end
     rescue => e
-      puts "[ruby] flush local cand warn: #{e.to_s}"
+      puts "[ruby] flush local cand warn: #{e}"
     end
     # Attach PC handlers now that signaling is ready
     attach_pc_handlers.call

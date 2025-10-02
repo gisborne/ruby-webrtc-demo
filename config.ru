@@ -16,7 +16,6 @@
 require "rack"
 require "faye/websocket"
 require "json"
-require "thread"
 
 PUBLIC_DIR = File.join(__dir__, "public")
 
