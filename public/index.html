@@ -19,15 +19,50 @@
 <h1>WebRTC DataChannel Chat</h1>
 <div id="roomLine">
   Room: <strong id="roomName"></strong>
-  <div id="status">status: <em>connecting…</em></div>
-  <div>transport: <span id="transport">detecting…</span></div>
+  <div id="status" aria-live="polite">status: <em>connecting…</em></div>
+  <div>transport: <span id="transport" aria-live="polite">detecting…</span></div>
 </div>
 <div id="log" aria-live="polite"></div>
 <form id="chatForm">
   <label for="msg">Type a message…</label><input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
   <button type="submit" id="sendBtn" disabled>Send</button>
 </form>
+<!-- Ruby app will be injected once by the loader below -->
 
-<script src="app.js"></script>
+<script>
+  (function () {
+    const impl = new URLSearchParams(location.search).get("impl") || "js";
+    if (impl === "ruby") {
+      // Guard to prevent double-injection on re-entrant loads
+      if (!window.__ruby_app_injected) {
+        window.__ruby_app_injected = true;
+        // 1) Fetch app.rb
+        fetch("ruby/app.rb", { cache: "no-cache" })
+          .then(r => r.text())
+          .then(src => {
+            // 2) Inject as inline Ruby script so the runtime executes it
+            const rubyScript = document.createElement("script");
+            rubyScript.type = "text/ruby";
+            rubyScript.text = src;
+            document.body.appendChild(rubyScript);
+
+            // 3) Load the IIFE runtime after the Ruby script is present
+            const runtime = document.createElement("script");
+            runtime.src = "ruby/browser.script.iife.js";
+            runtime.onerror = (e) => console.error("Failed to load Ruby IIFE runtime", e);
+            document.body.appendChild(runtime);
+          })
+          .catch(e => console.error("Failed to fetch ruby/app.rb", e));
+      }
+      return;
+    }
+
+    // JS fallback
+    const js = document.createElement("script");
+    js.src = "app.js";
+    document.body.appendChild(js);
+  })();
+</script>
+
 </body>
 </html>

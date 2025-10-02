@@ -8,6 +8,9 @@ require "thread"
 
 PUBLIC_DIR = File.join(__dir__, "public")
 
+# Ensure correct MIME type for .wasm
+Rack::Mime::MIME_TYPES['.wasm'] = 'application/wasm'
+
 # Lowercase all response header names (Rack 3 requires lowercase)
 class LowercaseHeaders
   def initialize(app)
@@ -40,28 +43,45 @@ class WsApp
 
       ws.on :message do |event|
         STDERR.puts "[ws] msg #{event.data[0..120]}"
-        data = JSON.parse(event.data) rescue {}
-        if data["cmd"] == "join"
-          room_id = (data["room"] || "demo").to_s.strip
+        @rooms ||= {}
+        data = event.data
+        begin
+          msg = JSON.parse(data)
+        rescue
+          msg = nil
+        end
+
+        if msg.is_a?(Hash) && msg["cmd"] == "join"
+          room_id = (msg["room"] || "demo").to_s.strip
           room_id = "demo" if room_id.empty?
 
-          existing = nil
-          count = nil
-          @mutex.synchronize do
-            existing = @rooms[room_id].dup
-            @rooms[room_id] << ws
-            count = @rooms[room_id].size
-          end
+          room_peers = (@rooms[room_id] ||= [])
+          # snapshot of peers before adding the new one
+          peers_before = room_peers.dup
 
-          ws.send({ type: "peers", count: count }.to_json)
-          existing.each { |s| s.send({ type: "new_peer" }.to_json) }
-        else
-          next unless room_id
-          recipients = nil
-          @mutex.synchronize do
-            recipients = @rooms[room_id].reject { |s| s.equal?(ws) }
+          # send current peer count to the joining client (it will wait if >1)
+          ws.send({ type: "peers", count: peers_before.length + 1 }.to_json)
+          # notify existing peers that a new peer has arrived (they become caller)
+          peers_before.each { |s| s.send({ type: "new_peer" }.to_json) }
+
+          # now add the joining socket to the room and persist room on ws
+          room_peers << ws
+          ws.instance_variable_set(:@room, room_id)
+        elsif msg.is_a?(Hash) && %w[offer answer candidate chat].include?(msg["type"])
+          room = ws.instance_variable_get(:@room)
+          if room && @rooms[room]
+            STDERR.puts "[ws] relay type=#{msg["type"]} room=#{room} peers=#{@rooms[room].length - 1}"
+            payload = JSON.dump(msg)
+            @rooms[room].each do |peer|
+              next if peer.equal?(ws)
+              begin
+                peer.send(payload)
+                STDERR.puts "[ws] -> peer #{peer.object_id}"
+              rescue => e
+                warn "[ws] relay error: #{e}"
+              end
+            end
           end
-          recipients.each { |s| s.send(event.data) }
         end
       end
 
