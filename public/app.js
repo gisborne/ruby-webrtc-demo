@@ -60,24 +60,6 @@ function enableSend(enabled) {
   msgInput.disabled = !enabled;
 }
 
-// Coerce various message payload shapes (string, Blob, ArrayBuffer)
-function renderMsg(e) {
-  try {
-    const v = (e && typeof e === "object" && "data" in e) ? e.data : e;
-    if (typeof v === "string") return v;
-    if (v && typeof Blob !== "undefined" && v instanceof Blob) {
-      const fr = new FileReader();
-      fr.onload = () => append("peer", "Peer: " + (fr.result != null ? String(fr.result) : ""));
-      try { fr.readAsText(v); } catch {}
-      return null;
-    }
-    if (v && (v.byteLength !== undefined || (v.buffer && v.buffer.byteLength !== undefined))) {
-      try { const dec = new TextDecoder(); return dec.decode(v.byteLength !== undefined ? v : v.buffer); } catch {}
-    }
-    return (v == null) ? "" : String(v);
-  } catch { return ""; }
-}
-
 function useWsFallback(reason = "") {
   if (transport === "ws") return;
   transport = "ws";
@@ -97,6 +79,7 @@ function armConnectTimeout(ms = 8000) {
 // ICE -> signal to peer
 pc.onicecandidate = (event) => {
   if (event.candidate) {
+    console.log("local ICE candidate:", event.candidate.type, event.candidate.protocol, event.candidate.address, event.candidate.port);
     ws.send(JSON.stringify({
       room,
       type: "candidate",
@@ -105,7 +88,9 @@ pc.onicecandidate = (event) => {
   }
 };
 
-pc.onicegatheringstatechange = () => {};
+pc.onicegatheringstatechange = () => {
+  console.log("iceGatheringState=", pc.iceGatheringState);
+};
 
 // Answerer will receive the data channel created by caller
 pc.ondatachannel = (event) => {
@@ -120,7 +105,7 @@ function wireChannel() {
     if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
     updateTransport();
   };
-  dc.onmessage = (e) => { const v = renderMsg(e); if (v != null) append("peer", "Peer: " + v); };
+  dc.onmessage = (event) => append("peer", "Peer: " + event.data);
   dc.onclose = () => {
     if (transport === "webrtc") {
       setStatus("disconnected");
@@ -130,6 +115,7 @@ function wireChannel() {
 }
 
 pc.oniceconnectionstatechange = () => {
+  console.log("iceConnectionState=", pc.iceConnectionState);
   if (pc.iceConnectionState === "failed") useWsFallback("ice failed");
   if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") setStatus("connected");
   updateTransport();
@@ -145,9 +131,15 @@ ws.onopen = () => {
   }
 };
 
-ws.onerror = () => setStatus("signaling error");
+ws.onerror = (e) => {
+  console.error("WS error", e);
+  setStatus("signaling error (see console)");
+};
 
-ws.onclose = () => setStatus("signaling closed");
+ws.onclose = (e) => {
+  console.warn("WS closed", e.code, e.reason);
+  setStatus("signaling closed");
+};
 
 ws.onmessage = async (evt) => {
   const msg = JSON.parse(evt.data);
