@@ -337,6 +337,22 @@ begin
     "})();"
   )
 
+  # Step 1: Minimal namespacing – unify send path behind RubyRTC.send.message
+  JS.eval(
+    "(function(){\n" +
+    "  if(!window.RubyRTC) window.RubyRTC = {};\n" +
+    "  var S = window.RubyRTC.send || (window.RubyRTC.send = {});\n" +
+    "  S.message = function(room, text){\n" +
+    "    try{\n" +
+    "      var v = (text==null? '': String(text));\n" +
+    "      var ch = window.__ruby_dc;\n" +
+    "      if (ch && ch.readyState === 'open') { try{ ch.send(v); }catch(_){} }\n" +
+    "      else { try{ if(window.__ruby_send_chat){ window.__ruby_send_chat(room, v); } }catch(_){} }\n" +
+    "    }catch(_){}\n" +
+    "  };\n" +
+    "})();"
+  )
+
   # JS helpers for signaling sends
   JS.eval(
     "(function(){\n" +
@@ -403,9 +419,7 @@ begin
       "  if (typeof v === 'undefined' || v === null) v = '';\n" +
       "  v = String(v).trim();\n" +
       "  if (!v) return;\n" +
-      "  var ch = window.__ruby_dc;\n" +
-      "  if (ch && ch.readyState === 'open') { try { ch.send(v); } catch(e) {} }\n" +
-      "  else { try { window.__ruby_send_chat(" + room.to_json + ", v); } catch(e) {} }\n" +
+      "  try{ if(window.RubyRTC && window.RubyRTC.send && typeof window.RubyRTC.send.message==='function'){ window.RubyRTC.send.message(" + room.to_json + ", v); } }catch(_){}\n" +
       "  try { var log=document.getElementById('log'); if(log){ var d=document.createElement('div'); d.className='me'; d.textContent='Me: ' + v; log.appendChild(d); log.scrollTop=log.scrollHeight; } } catch(_) {}\n" +
       "  try { if (m) m.value = ''; } catch(_) {}\n" +
       "})();"
